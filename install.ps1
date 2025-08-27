@@ -1,69 +1,69 @@
-# ===================================================================================
-# Script de ConfiguraciÛn de Kiosco con Shell Launcher para Steam
-# VersiÛn: 1.3 - Corregido error de sintaxis en la verificaciÛn de administrador
-# Autor: Especialista en AutomatizaciÛn de Sistemas
+Ôªø# ===================================================================================
+# Script de Configuraci√≥n de Kiosco con Shell Launcher para Steam
+# Versi√≥n: 1.3 - Corregido error de sintaxis en la verificaci√≥n de administrador
+# Autor: Especialista en Automatizaci√≥n de Sistemas
 # Prerrequisitos: Windows 10/11 Enterprise/Education, PowerShell ejecutado como Administrador.
 # ===================================================================================
 
-# --- CONFIGURACI”N DE VARIABLES ---
+# --- CONFIGURACI√ìN DE VARIABLES ---
 $KioskUserName = "gamer"
 $LauncherBatchPath = "C:\Users\Public\custom.bat"
 
-# Par·metro para limpiar configuraciÛn existente
+# Par√°metro para limpiar configuraci√≥n existente
 $CleanExistingConfig = $TRUE  # Cambiar a $false si no quiere limpiar configuraciones existentes
 
 # --- VERIFICACIONES PREVIAS ---
 Write-Host "Iniciando verificaciones previas..." -ForegroundColor Yellow
 
-# VerificaciÛn de privilegios de administrador - CORREGIDO
+# Verificaci√≥n de privilegios de administrador - CORREGIDO
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Error "Este script debe ejecutarse con privilegios de Administrador. Por favor, reinicie PowerShell como Administrador."
     exit
 }
 Write-Host "[OK] Privilegios de administrador verificados." -ForegroundColor Green
 
-# Verificar ediciÛn de Windows
+# Verificar edici√≥n de Windows
 $WindowsEdition = (Get-WmiObject -Class Win32_OperatingSystem).Caption
-Write-Host "EdiciÛn de Windows detectada: $WindowsEdition" -ForegroundColor Cyan
+Write-Host "Edici√≥n de Windows detectada: $WindowsEdition" -ForegroundColor Cyan
 
 if ($WindowsEdition -notmatch "Enterprise|Education|Pro") {
-    Write-Warning "Shell Launcher requiere Windows 10/11 Enterprise, Education o Pro. Su ediciÛn podrÌa no ser compatible."
-    $Continue = Read-Host "øDesea continuar de todos modos? (s/n)"
+    Write-Warning "Shell Launcher requiere Windows 10/11 Enterprise, Education o Pro. Su edici√≥n podr√≠a no ser compatible."
+    $Continue = Read-Host "¬øDesea continuar de todos modos? (s/n)"
     if ($Continue -ne "s" -and $Continue -ne "S") {
         exit
     }
 }
 
-# Verificar polÌtica de ejecuciÛn de PowerShell
+# Verificar pol√≠tica de ejecuci√≥n de PowerShell
 $ExecutionPolicy = Get-ExecutionPolicy
-Write-Host "PolÌtica de ejecuciÛn actual: $ExecutionPolicy" -ForegroundColor Cyan
+Write-Host "Pol√≠tica de ejecuci√≥n actual: $ExecutionPolicy" -ForegroundColor Cyan
 
 if ($ExecutionPolicy -eq "Restricted") {
-    Write-Warning "La polÌtica de ejecuciÛn est· restringida. Esto podrÌa causar problemas."
+    Write-Warning "La pol√≠tica de ejecuci√≥n est√° restringida. Esto podr√≠a causar problemas."
     Write-Host "Para solucionarlo, ejecute: Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser" -ForegroundColor Yellow
 }
 
-# HabilitaciÛn de la caracterÌstica Shell Launcher si no est· presente
+# Habilitaci√≥n de la caracter√≠stica Shell Launcher si no est√° presente
 $feature = Get-WindowsOptionalFeature -Online -FeatureName Client-EmbeddedShellLauncher
 if ($feature.State -ne "Enabled") {
-    Write-Host "La caracterÌstica Shell Launcher no est· habilitada. Habilit·ndola ahora..." -ForegroundColor Cyan
+    Write-Host "La caracter√≠stica Shell Launcher no est√° habilitada. Habilit√°ndola ahora..." -ForegroundColor Cyan
     Enable-WindowsOptionalFeature -Online -FeatureName Client-EmbeddedShellLauncher -All -NoRestart
-    Write-Host "[OK] CaracterÌstica Shell Launcher habilitada. Se recomienda reiniciar el sistema despuÈs de completar el script." -ForegroundColor Green
+    Write-Host "[OK] Caracter√≠stica Shell Launcher habilitada. Se recomienda reiniciar el sistema despu√©s de completar el script." -ForegroundColor Green
 } else {
-    Write-Host "[OK] La caracterÌstica Shell Launcher ya est· habilitada." -ForegroundColor Green
+    Write-Host "[OK] La caracter√≠stica Shell Launcher ya est√° habilitada." -ForegroundColor Green
 }
 
-# --- FASE I: CREACI”N DEL USUARIO ---
-Write-Host "`nIniciando Fase I: CreaciÛn de la cuenta de usuario '$KioskUserName'..." -ForegroundColor Yellow
+# --- FASE I: CREACI√ìN DEL USUARIO ---
+Write-Host "`nIniciando Fase I: Creaci√≥n de la cuenta de usuario '$KioskUserName'..." -ForegroundColor Yellow
 
 try {
     # Verificar si el usuario ya existe
     $ExistingUser = Get-LocalUser -Name $KioskUserName -ErrorAction SilentlyContinue
     if ($ExistingUser) {
-        Write-Host "El usuario '$KioskUserName' ya existe. Verificando configuraciÛn..." -ForegroundColor Cyan
+        Write-Host "El usuario '$KioskUserName' ya existe. Verificando configuraci√≥n..." -ForegroundColor Cyan
         Write-Host "Estado del usuario: $($ExistingUser.Enabled)" -ForegroundColor Cyan
         
-        # Asegurar que el usuario estÈ habilitado
+        # Asegurar que el usuario est√© habilitado
         if (-not $ExistingUser.Enabled) {
             Enable-LocalUser -Name $KioskUserName
             Write-Host "[OK] Usuario '$KioskUserName' habilitado." -ForegroundColor Green
@@ -71,29 +71,29 @@ try {
     } else {
         Write-Host "Creando el usuario '$KioskUserName'..." -ForegroundColor Cyan
         
-        # Solicitar contraseÒa
+        # Solicitar contrase√±a
         do {
-            $Password = Read-Host -AsSecureString "Introduzca una contraseÒa para el usuario '$KioskUserName' (mÌnimo 8 caracteres)"
+            $Password = Read-Host -AsSecureString "Introduzca una contrase√±a para el usuario '$KioskUserName' (m√≠nimo 8 caracteres)"
             $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password)
             $PlainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
             [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
             
             if ($PlainPassword.Length -lt 8) {
-                Write-Warning "La contraseÒa debe tener al menos 8 caracteres. Intente nuevamente."
+                Write-Warning "La contrase√±a debe tener al menos 8 caracteres. Intente nuevamente."
             }
         } while ($PlainPassword.Length -lt 8)
         
-        # Crear el usuario con configuraciÛn especÌfica para aparecer en login
+        # Crear el usuario con configuraci√≥n espec√≠fica para aparecer en login
         $NewUser = New-LocalUser -Name $KioskUserName -Password $Password -FullName "Kiosk Gaming Account" -Description "Cuenta de usuario para el modo kiosco de Steam." -AccountNeverExpires -PasswordNeverExpires
         Write-Host "[OK] Usuario '$KioskUserName' creado exitosamente." -ForegroundColor Green
         
         # Verificar que el usuario fue creado correctamente
         $CreatedUser = Get-LocalUser -Name $KioskUserName -ErrorAction SilentlyContinue
         if ($CreatedUser) {
-            Write-Host "[OK] VerificaciÛn: Usuario '$KioskUserName' existe en el sistema." -ForegroundColor Green
+            Write-Host "[OK] Verificaci√≥n: Usuario '$KioskUserName' existe en el sistema." -ForegroundColor Green
             Write-Host "    - Habilitado: $($CreatedUser.Enabled)" -ForegroundColor Gray
             Write-Host "    - Nombre completo: $($CreatedUser.FullName)" -ForegroundColor Gray
-            Write-Host "    - DescripciÛn: $($CreatedUser.Description)" -ForegroundColor Gray
+            Write-Host "    - Descripci√≥n: $($CreatedUser.Description)" -ForegroundColor Gray
         } else {
             Write-Error "Error: El usuario no fue creado correctamente."
             exit
@@ -125,7 +125,7 @@ try {
         Write-Host "[OK] Clave de registro SpecialAccounts creada." -ForegroundColor Green
     }
     
-    # Asegurar que el usuario NO estÈ oculto (valor 0 = oculto, 1 = visible)
+    # Asegurar que el usuario NO est√© oculto (valor 0 = oculto, 1 = visible)
     Set-ItemProperty -Path $SpecialAccountsPath -Name $KioskUserName -Value 1 -Type DWord -ErrorAction SilentlyContinue
     Write-Host "[OK] Usuario configurado como visible en la pantalla de login." -ForegroundColor Green
     
@@ -134,7 +134,7 @@ try {
     if (!(Test-Path $UserProfilePath)) {
         Write-Host "Creando perfil de usuario..." -ForegroundColor Cyan
         
-        # Forzar la creaciÛn del perfil iniciando sesiÛn simulada
+        # Forzar la creaci√≥n del perfil iniciando sesi√≥n simulada
         $UserSID = (New-Object System.Security.Principal.NTAccount($KioskUserName)).Translate([System.Security.Principal.SecurityIdentifier]).Value
         
         # Configurar el perfil en el registro
@@ -148,43 +148,43 @@ try {
         }
     }
     
-    # 4. Verificar polÌticas locales que podrÌan ocultar el usuario
-    Write-Host "Verificando polÌticas locales..." -ForegroundColor Cyan
+    # 4. Verificar pol√≠ticas locales que podr√≠an ocultar el usuario
+    Write-Host "Verificando pol√≠ticas locales..." -ForegroundColor Cyan
     
-    # Verificar si hay una polÌtica que oculte usuarios
+    # Verificar si hay una pol√≠tica que oculte usuarios
     $HideUsersPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
     $DontDisplayLastUserName = Get-ItemProperty -Path $HideUsersPath -Name "DontDisplayLastUserName" -ErrorAction SilentlyContinue
     if ($DontDisplayLastUserName -and $DontDisplayLastUserName.DontDisplayLastUserName -eq 1) {
-        Write-Host "Detectada polÌtica que oculta nombres de usuario. Esto es normal en algunos sistemas." -ForegroundColor Yellow
+        Write-Host "Detectada pol√≠tica que oculta nombres de usuario. Esto es normal en algunos sistemas." -ForegroundColor Yellow
     }
     
-    Write-Host "[OK] ConfiguraciÛn del usuario completada." -ForegroundColor Green
-    Write-Host "InformaciÛn importante:" -ForegroundColor Yellow
+    Write-Host "[OK] Configuraci√≥n del usuario completada." -ForegroundColor Green
+    Write-Host "Informaci√≥n importante:" -ForegroundColor Yellow
     Write-Host "- Si no ve el usuario en la pantalla de login, presione Ctrl+Alt+Del" -ForegroundColor Gray
-    Write-Host "- O haga clic en 'Otro usuario' si est· disponible" -ForegroundColor Gray
-    Write-Host "- Ingrese manualmente: Usuario=$KioskUserName, ContraseÒa=(la que ingresÛ)" -ForegroundColor Gray
+    Write-Host "- O haga clic en 'Otro usuario' si est√° disponible" -ForegroundColor Gray
+    Write-Host "- Ingrese manualmente: Usuario=$KioskUserName, Contrase√±a=(la que ingres√≥)" -ForegroundColor Gray
     
 } catch {
     Write-Error "Error al crear el usuario '$KioskUserName'. Detalles: $_"
-    Write-Host "InformaciÛn adicional de depuraciÛn:" -ForegroundColor Yellow
+    Write-Host "Informaci√≥n adicional de depuraci√≥n:" -ForegroundColor Yellow
     Write-Host "- PowerShell Version: $($PSVersionTable.PSVersion)" -ForegroundColor Gray
     Write-Host "- Windows Version: $((Get-WmiObject -Class Win32_OperatingSystem).Caption)" -ForegroundColor Gray
     exit
 }
 
-# --- FASE II: VERIFICACI”N E INSTALACI”N DE STEAM ---
-Write-Host "`nIniciando Fase II: VerificaciÛn e InstalaciÛn de Steam..." -ForegroundColor Yellow
+# --- FASE II: VERIFICACI√ìN E INSTALACI√ìN DE STEAM ---
+Write-Host "`nIniciando Fase II: Verificaci√≥n e Instalaci√≥n de Steam..." -ForegroundColor Yellow
 
-# --- FunciÛn para obtener la ruta de instalaciÛn de Steam ---
+# --- Funci√≥n para obtener la ruta de instalaci√≥n de Steam ---
 function Get-SteamPath {
     $SteamRegPath = "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam"
     $SteamPath = (Get-ItemProperty -Path $SteamRegPath -Name "InstallPath" -ErrorAction SilentlyContinue).InstallPath
     return $SteamPath
 }
 
-# --- FunciÛn para descargar e instalar Steam ---
+# --- Funci√≥n para descargar e instalar Steam ---
 function Install-Steam {
-    Write-Host "No se encontrÛ Steam. Intentando descargar e instalar autom·ticamente..." -ForegroundColor Cyan
+    Write-Host "No se encontr√≥ Steam. Intentando descargar e instalar autom√°ticamente..." -ForegroundColor Cyan
     $InstallerUrl = "https://cdn.akamai.steamstatic.com/client/installer/SteamSetup.exe"
     $InstallerPath = Join-Path $env:TEMP "SteamSetup.exe"
 
@@ -193,15 +193,15 @@ function Install-Steam {
         Invoke-WebRequest -Uri $InstallerUrl -OutFile $InstallerPath
         Write-Host "[OK] Instalador descargado en $InstallerPath" -ForegroundColor Green
 
-        Write-Host "Iniciando la instalaciÛn silenciosa de Steam... Esto puede tardar unos minutos." -ForegroundColor Cyan
-        # Se utiliza el argumento /S para una instalaciÛn silenciosa (comportamiento est·ndar para instaladores NSIS).
+        Write-Host "Iniciando la instalaci√≥n silenciosa de Steam... Esto puede tardar unos minutos." -ForegroundColor Cyan
+        # Se utiliza el argumento /S para una instalaci√≥n silenciosa (comportamiento est√°ndar para instaladores NSIS).
         Start-process -FilePath $InstallerPath -ArgumentList "/S" -Wait -Verb RunAs
-        Write-Host "[OK] InstalaciÛn de Steam completada." -ForegroundColor Green
+        Write-Host "[OK] Instalaci√≥n de Steam completada." -ForegroundColor Green
     } catch {
-        Write-Error "OcurriÛ un error durante la descarga o instalaciÛn de Steam. Detalles: $_"
+        Write-Error "Ocurri√≥ un error durante la descarga o instalaci√≥n de Steam. Detalles: $_"
         return $FALSE
     } finally {
-        # Limpiar el archivo de instalaciÛn
+        # Limpiar el archivo de instalaci√≥n
         if (Test-Path $InstallerPath) {
             Remove-Item $InstallerPath -Force
         }
@@ -209,7 +209,7 @@ function Install-Steam {
     return $TRUE
 }
 
-# --- LÛgica principal de verificaciÛn e instalaciÛn ---
+# --- L√≥gica principal de verificaci√≥n e instalaci√≥n ---
 $SteamPath = Get-SteamPath
 
 if (-not $SteamPath) {
@@ -221,7 +221,7 @@ if (-not $SteamPath) {
 }
 
 if (-not $SteamPath) {
-    Write-Error "No se pudo encontrar la ruta de instalaciÛn de Steam, incluso despuÈs de intentar la instalaciÛn. Verifique la instalaciÛn manualmente y vuelva a ejecutar el script."
+    Write-Error "No se pudo encontrar la ruta de instalaci√≥n de Steam, incluso despu√©s de intentar la instalaci√≥n. Verifique la instalaci√≥n manualmente y vuelva a ejecutar el script."
     exit
 }
 
@@ -248,10 +248,10 @@ try {
     exit
 }
 
-# --- FASE III: CONFIGURACI”N DE SHELL LAUNCHER ---
-Write-Host "`nIniciando Fase III: ConfiguraciÛn de Shell Launcher..." -ForegroundColor Yellow
+# --- FASE III: CONFIGURACI√ìN DE SHELL LAUNCHER ---
+Write-Host "`nIniciando Fase III: Configuraci√≥n de Shell Launcher..." -ForegroundColor Yellow
 
-# DefiniciÛn de constantes y funciones auxiliares
+# Definici√≥n de constantes y funciones auxiliares
 $COMPUTER = "localhost"
 $NAMESPACE = "root\standardcimv2\embedded"
 $restart_shell = 0 # Reinicia el shell si se cierra
@@ -282,23 +282,23 @@ function Remove-ExistingShellLauncherConfig($ShellLauncherClass) {
         $existingConfigs = $ShellLauncherClass.GetCustomShellConfigurations()
         
         if ($existingConfigs) {
-            Write-Host "Encontradas configuraciones existentes. Elimin·ndolas..." -ForegroundColor Yellow
+            Write-Host "Encontradas configuraciones existentes. Elimin√°ndolas..." -ForegroundColor Yellow
             foreach ($config in $existingConfigs) {
                 try {
                     $ShellLauncherClass.RemoveCustomShell($config.Sid)
-                    Write-Host "ConfiguraciÛn eliminada para SID: $($config.Sid)" -ForegroundColor Gray
+                    Write-Host "Configuraci√≥n eliminada para SID: $($config.Sid)" -ForegroundColor Gray
                 } catch {
-                    Write-Warning "No se pudo eliminar configuraciÛn para SID $($config.Sid): $_"
+                    Write-Warning "No se pudo eliminar configuraci√≥n para SID $($config.Sid): $_"
                 }
             }
         }
         
-        # Limpiar configuraciÛn por defecto
+        # Limpiar configuraci√≥n por defecto
         try {
             $ShellLauncherClass.SetDefaultShell("", 0)
-            Write-Host "ConfiguraciÛn por defecto limpiada." -ForegroundColor Gray
+            Write-Host "Configuraci√≥n por defecto limpiada." -ForegroundColor Gray
         } catch {
-            Write-Warning "No se pudo limpiar configuraciÛn por defecto: $_"
+            Write-Warning "No se pudo limpiar configuraci√≥n por defecto: $_"
         }
         
         Write-Host "[OK] Configuraciones existentes limpiadas." -ForegroundColor Green
@@ -322,7 +322,7 @@ try {
     }
     Write-Host "[OK] SID para '$KioskUserName' obtenido: $KioskUser_SID" -ForegroundColor Green
 
-    # Configurar el shell predeterminado para todos los dem·s usuarios como explorer.exe
+    # Configurar el shell predeterminado para todos los dem√°s usuarios como explorer.exe
     try {
         $ShellLauncherClass.SetDefaultShell("explorer.exe", $restart_shell)
         Write-Host "[OK] Shell predeterminado configurado como 'explorer.exe'." -ForegroundColor Green
@@ -337,14 +337,14 @@ try {
         Write-Host "[OK] Shell personalizado para '$KioskUserName' configurado para lanzar '$LauncherBatchPath'." -ForegroundColor Green
     } catch {
         if ($_.Exception.Message -like "*already exists*") {
-            Write-Host "Intentando eliminar configuraciÛn existente y recrear..." -ForegroundColor Yellow
+            Write-Host "Intentando eliminar configuraci√≥n existente y recrear..." -ForegroundColor Yellow
             try {
                 $ShellLauncherClass.RemoveCustomShell($KioskUser_SID)
                 Start-Sleep -Seconds 2
                 $ShellLauncherClass.SetCustomShell($KioskUser_SID, $LauncherBatchPath, $null, $null, $restart_shell)
-                Write-Host "[OK] Shell personalizado configurado despuÈs de limpiar configuraciÛn existente." -ForegroundColor Green
+                Write-Host "[OK] Shell personalizado configurado despu√©s de limpiar configuraci√≥n existente." -ForegroundColor Green
             } catch {
-                Write-Error "No se pudo configurar el shell personalizado despuÈs de m˙ltiples intentos: $_"
+                Write-Error "No se pudo configurar el shell personalizado despu√©s de m√∫ltiples intentos: $_"
                 exit
             }
         } else {
@@ -363,15 +363,15 @@ try {
     }
 
 } catch {
-    Write-Error "OcurriÛ un error durante la configuraciÛn de WMI. Aseg˙rese de que la caracterÌstica Shell Launcher est· habilitada. Detalles: $_"
-    Write-Host "`nInformaciÛn adicional de diagnÛstico:" -ForegroundColor Yellow
-    Write-Host "1. Verifique que Shell Launcher estÈ habilitado: Get-WindowsOptionalFeature -Online -FeatureName Client-EmbeddedShellLauncher" -ForegroundColor Gray
-    Write-Host "2. Es posible que necesite reiniciar el sistema despuÈs de habilitar Shell Launcher." -ForegroundColor Gray
-    Write-Host "3. Intente ejecutar el script nuevamente despuÈs del reinicio." -ForegroundColor Gray
+    Write-Error "Ocurri√≥ un error durante la configuraci√≥n de WMI. Aseg√∫rese de que la caracter√≠stica Shell Launcher est√° habilitada. Detalles: $_"
+    Write-Host "`nInformaci√≥n adicional de diagn√≥stico:" -ForegroundColor Yellow
+    Write-Host "1. Verifique que Shell Launcher est√© habilitado: Get-WindowsOptionalFeature -Online -FeatureName Client-EmbeddedShellLauncher" -ForegroundColor Gray
+    Write-Host "2. Es posible que necesite reiniciar el sistema despu√©s de habilitar Shell Launcher." -ForegroundColor Gray
+    Write-Host "3. Intente ejecutar el script nuevamente despu√©s del reinicio." -ForegroundColor Gray
     exit
 }
 
-# --- FINALIZACI”N ---
-Write-Host "`n--- Proceso de configuraciÛn de Kiosco completado ---" -ForegroundColor Magenta
-Write-Host "Para verificar la configuraciÛn, cierre la sesiÛn actual e inicie sesiÛn como el usuario '$KioskUserName'." -ForegroundColor Magenta
-Write-Host "Steam deberÌa lanzarse autom·ticamente en modo Big Picture en lugar del escritorio de Windows." -ForegroundColor Magenta
+# --- FINALIZACI√ìN ---
+Write-Host "`n--- Proceso de configuraci√≥n de Kiosco completado ---" -ForegroundColor Magenta
+Write-Host "Para verificar la configuraci√≥n, cierre la sesi√≥n actual e inicie sesi√≥n como el usuario '$KioskUserName'." -ForegroundColor Magenta
+Write-Host "Steam deber√≠a lanzarse autom√°ticamente en modo Big Picture en lugar del escritorio de Windows." -ForegroundColor Magenta

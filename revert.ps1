@@ -1,12 +1,12 @@
-# ===================================================================================
-# Script de ReversiÛn de ConfiguraciÛn de Kiosco Steam
-# VersiÛn: 1.4 - Limpieza final de caracteres y codificaciÛn (corregido)
-# Autor: Especialista en AutomatizaciÛn de Sistemas
-# PropÛsito: Revertir completamente la configuraciÛn de kiosco Steam
+Ôªø# ===================================================================================
+# Script de Reversi√≥n de Configuraci√≥n de Kiosco Steam
+# Versi√≥n: 1.4 - Limpieza final de caracteres y codificaci√≥n (corregido)
+# Autor: Especialista en Automatizaci√≥n de Sistemas
+# Prop√≥sito: Revertir completamente la configuraci√≥n de kiosco Steam
 # Prerrequisitos: Windows 10/11, PowerShell ejecutado como Administrador
 # ===================================================================================
 
-# --- CONFIGURACI”N DE VARIABLES ---
+# --- CONFIGURACI√ìN DE VARIABLES ---
 $KioskUserName    = "gamer"
 $LauncherBatchPath = "C:\Users\Public\custom.bat"
 
@@ -14,10 +14,10 @@ $LauncherBatchPath = "C:\Users\Public\custom.bat"
 function Show-Banner {
     Write-Host ""
     Write-Host "========================================================================" -ForegroundColor Red
-    Write-Host "                  SCRIPT DE REVERSI”N DE CONFIGURACI”N KIOSCO STEAM" -ForegroundColor Red
+    Write-Host "                  SCRIPT DE REVERSI√ìN DE CONFIGURACI√ìN KIOSCO STEAM" -ForegroundColor Red
     Write-Host "========================================================================" -ForegroundColor Red
     Write-Host ""
-    Write-Host "ADVERTENCIA: Este script eliminar· la configuraciÛn de kiosco Steam" -ForegroundColor Yellow
+    Write-Host "ADVERTENCIA: Este script eliminar√° la configuraci√≥n de kiosco Steam" -ForegroundColor Yellow
     Write-Host ("y puede eliminar el usuario '{0}' y desinstalar Steam." -f $KioskUserName) -ForegroundColor Yellow
     Write-Host ""
 }
@@ -71,17 +71,17 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 Write-Host "[OK] Privilegios de administrador verificados." -ForegroundColor Green
 
-if (-not (Confirm-Action "øEst· seguro de que desea proceder con la reversiÛn de la configuraciÛn de kiosco?")) {
-    Write-Host "OperaciÛn cancelada por el usuario." -ForegroundColor Yellow
+if (-not (Confirm-Action "¬øEst√° seguro de que desea proceder con la reversi√≥n de la configuraci√≥n de kiosco?")) {
+    Write-Host "Operaci√≥n cancelada por el usuario." -ForegroundColor Yellow
     exit
 }
 
 # --- FASE I: DESHABILITAR Y LIMPIAR SHELL LAUNCHER ---
-Write-Host "`n=== FASE I: LIMPIANDO CONFIGURACI”N DE SHELL LAUNCHER ===" -ForegroundColor Magenta
+Write-Host "`n=== FASE I: LIMPIANDO CONFIGURACI√ìN DE SHELL LAUNCHER ===" -ForegroundColor Magenta
 
 try {
     $NAMESPACE = "root\standardcimv2\embedded"
-    # ConstrucciÛn m·s segura de la ruta de clase WMI
+    # Construcci√≥n m√°s segura de la ruta de clase WMI
     $wmipath = "\\localhost\" + $NAMESPACE + ":WESL_UserSetting"
     $ShellLauncherClass = [wmiclass]$wmipath
 
@@ -95,10 +95,10 @@ try {
         foreach ($config in $existingConfigs) {
             try {
                 $ShellLauncherClass.RemoveCustomShell($config.Sid)
-                Write-Host ("  - ConfiguraciÛn eliminada para SID: {0}" -f $config.Sid) -ForegroundColor Gray
+                Write-Host ("  - Configuraci√≥n eliminada para SID: {0}" -f $config.Sid) -ForegroundColor Gray
             }
             catch {
-                Write-Warning ("No se pudo eliminar configuraciÛn para SID {0}: {1}" -f $config.Sid, $_)
+                Write-Warning ("No se pudo eliminar configuraci√≥n para SID {0}: {1}" -f $config.Sid, $_)
             }
         }
     }
@@ -127,12 +127,12 @@ if (Test-Path $LauncherBatchPath) {
     Write-Host "INFO: Archivo de lanzamiento no encontrado." -ForegroundColor Cyan
 }
 
-# --- FASE III: GESTI”N DEL USUARIO ---
-Write-Host ("`n=== FASE III: GESTI”N DEL USUARIO '{0}' ===" -f $KioskUserName) -ForegroundColor Magenta
+# --- FASE III: GESTI√ìN DEL USUARIO ---
+Write-Host ("`n=== FASE III: GESTI√ìN DEL USUARIO '{0}' ===" -f $KioskUserName) -ForegroundColor Magenta
 
 $ExistingUser = Get-LocalUser -Name $KioskUserName -ErrorAction SilentlyContinue
 if ($ExistingUser) {
-    if (Confirm-Action ("øDesea ELIMINAR completamente el usuario '{0}'?" -f $KioskUserName) "N") {
+    if (Confirm-Action ("¬øDesea ELIMINAR completamente el usuario '{0}'?" -f $KioskUserName) "N") {
         try {
             Write-Host "Cerrando sesiones activas del usuario (si existen)..." -ForegroundColor Cyan
             $UserSessions = (query user 2>$null) | Where-Object { $_ -match $KioskUserName }
@@ -150,7 +150,7 @@ if ($ExistingUser) {
             Write-Host ("[OK] Usuario '{0}' eliminado." -f $KioskUserName) -ForegroundColor Green
 
             $UserProfilePath = "C:\Users\$KioskUserName"
-            if ((Test-Path $UserProfilePath) -and (Confirm-Action ("øDesea eliminar tambiÈn el directorio del perfil ({0})?" -f $UserProfilePath) "N")) {
+            if ((Test-Path $UserProfilePath) -and (Confirm-Action ("¬øDesea eliminar tambi√©n el directorio del perfil ({0})?" -f $UserProfilePath) "N")) {
                 Write-Host "Eliminando directorio del perfil..." -ForegroundColor Cyan
                 Remove-Item $UserProfilePath -Recurse -Force
                 Write-Host "[OK] Directorio del perfil eliminado." -ForegroundColor Green
@@ -161,7 +161,7 @@ if ($ExistingUser) {
         }
     } else {
         Write-Host ("Usuario '{0}' conservado." -f $KioskUserName) -ForegroundColor Cyan
-        if (Confirm-Action ("øDesea DESHABILITAR el usuario '{0}' en su lugar?" -f $KioskUserName) "S") {
+        if (Confirm-Action ("¬øDesea DESHABILITAR el usuario '{0}' en su lugar?" -f $KioskUserName) "S") {
             Disable-LocalUser -Name $KioskUserName
             Write-Host ("[OK] Usuario '{0}' deshabilitado." -f $KioskUserName) -ForegroundColor Green
         }
@@ -170,11 +170,11 @@ if ($ExistingUser) {
     Write-Host ("INFO: Usuario '{0}' no encontrado." -f $KioskUserName) -ForegroundColor Cyan
 }
 
-# --- FASE IV: GESTI”N DE STEAM ---
-Write-Host "`n=== FASE IV: GESTI”N DE STEAM ===" -ForegroundColor Magenta
+# --- FASE IV: GESTI√ìN DE STEAM ---
+Write-Host "`n=== FASE IV: GESTI√ìN DE STEAM ===" -ForegroundColor Magenta
 
 if (Get-SteamPath) {
-    if (Confirm-Action "øDesea DESINSTALAR Steam completamente?" "N") {
+    if (Confirm-Action "¬øDesea DESINSTALAR Steam completamente?" "N") {
         try {
             Write-Host "Cerrando procesos de Steam..." -ForegroundColor Cyan
             Get-process steam* -ErrorAction SilentlyContinue | Stop-process -Force
@@ -182,11 +182,11 @@ if (Get-SteamPath) {
             $SteamUninstaller = Get-SteamUninstaller
             if ($SteamUninstaller) {
                 Write-Host "Ejecutando desinstalador oficial de Steam..." -ForegroundColor Cyan
-                # InvocaciÛn m·s robusta de cmd con argumentos separados
+                # Invocaci√≥n m√°s robusta de cmd con argumentos separados
                 Start-process -FilePath "cmd.exe" -ArgumentList "/c", $SteamUninstaller -Wait
-                Write-Host "[OK] Proceso de desinstalaciÛn finalizado." -ForegroundColor Green
+                Write-Host "[OK] Proceso de desinstalaci√≥n finalizado." -ForegroundColor Green
             } else {
-                Write-Warning "No se encontrÛ el desinstalador oficial. Se intentar· eliminar manualmente."
+                Write-Warning "No se encontr√≥ el desinstalador oficial. Se intentar√° eliminar manualmente."
                 $SteamPath = Get-SteamPath
                 if ($SteamPath) {
                     Remove-Item $SteamPath -Recurse -Force -ErrorAction SilentlyContinue
@@ -196,7 +196,7 @@ if (Get-SteamPath) {
             }
         }
         catch {
-            Write-Error ("Error durante la desinstalaciÛn de Steam: {0}" -f $_)
+            Write-Error ("Error durante la desinstalaci√≥n de Steam: {0}" -f $_)
         }
     } else {
         Write-Host "Steam conservado." -ForegroundColor Cyan
@@ -205,27 +205,27 @@ if (Get-SteamPath) {
     Write-Host "INFO: Steam no encontrado en el sistema." -ForegroundColor Cyan
 }
 
-# --- FASE V: DESHABILITAR CARACTERÕSTICAS DE WINDOWS ---
-Write-Host "`n=== FASE V: GESTI”N DE CARACTERÕSTICAS DE WINDOWS ===" -ForegroundColor Magenta
+# --- FASE V: DESHABILITAR CARACTER√çSTICAS DE WINDOWS ---
+Write-Host "`n=== FASE V: GESTI√ìN DE CARACTER√çSTICAS DE WINDOWS ===" -ForegroundColor Magenta
 
 try {
     $feature = Get-WindowsOptionalFeature -Online -FeatureName Client-EmbeddedShellLauncher -ErrorAction SilentlyContinue
     if ($feature -and $feature.State -eq "Enabled") {
-        if (Confirm-Action "øDesea DESHABILITAR la caracterÌstica Shell Launcher de Windows?" "S") {
-            Write-Host "Deshabilitando caracterÌstica Shell Launcher..." -ForegroundColor Cyan
+        if (Confirm-Action "¬øDesea DESHABILITAR la caracter√≠stica Shell Launcher de Windows?" "S") {
+            Write-Host "Deshabilitando caracter√≠stica Shell Launcher..." -ForegroundColor Cyan
             Disable-WindowsOptionalFeature -Online -FeatureName Client-EmbeddedShellLauncher -NoRestart
-            Write-Host "[OK] CaracterÌstica deshabilitada. Se requiere un reinicio." -ForegroundColor Green
+            Write-Host "[OK] Caracter√≠stica deshabilitada. Se requiere un reinicio." -ForegroundColor Green
         }
     } else {
-        Write-Host "INFO: La caracterÌstica Shell Launcher ya est· deshabilitada o no est· presente." -ForegroundColor Cyan
+        Write-Host "INFO: La caracter√≠stica Shell Launcher ya est√° deshabilitada o no est√° presente." -ForegroundColor Cyan
     }
 }
 catch {
-    Write-Warning ("No se pudo verificar la caracterÌstica Shell Launcher: {0}" -f $_)
+    Write-Warning ("No se pudo verificar la caracter√≠stica Shell Launcher: {0}" -f $_)
 }
 
-# --- FINALIZACI”N ---
+# --- FINALIZACI√ìN ---
 Write-Host "`n========================================================================" -ForegroundColor Green
-Write-Host "                         REVERSI”N COMPLETADA" -ForegroundColor Green
+Write-Host "                         REVERSI√ìN COMPLETADA" -ForegroundColor Green
 Write-Host "========================================================================" -ForegroundColor Green
 Write-Host "`nPor favor, REINICIE el sistema para que todos los cambios surtan efecto." -ForegroundColor Yellow
