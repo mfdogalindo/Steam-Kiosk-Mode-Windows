@@ -1,16 +1,15 @@
 ﻿# ===================================================================================
 # Script de Configuración de Kiosco con Shell Launcher para Steam y OpenRGB
-# Versión: 2.0 - Revisado y mejorado según solicitud
-# Autor: Especialista en Automatización de Sistemas (Modificado por Gemini)
+# Versión: 2.2 - CORREGIDO - Soluciona problema de ejecución del VBS
+# Autor: Especialista en Automatización de Sistemas (Corregido por Claude)
 # Prerrequisitos: Windows 10/11 Enterprise/Education/Pro, PowerShell ejecutado como Administrador.
 # ===================================================================================
 
 # --- CONFIGURACIÓN DE VARIABLES ---
 $KioskUserName = "gamer"
-#>> El script de inicio ahora será un VBS para un lanzamiento oculto.
 $LauncherVbsPath = "C:\Users\Public\launch.vbs"
 
-#>> Nueva variable para especificar el perfil de OpenRGB. Dejar en blanco ("") si no se desea cargar un perfil.
+#>> Variable para especificar el perfil de OpenRGB
 $OpenRGBProfileName = "Steam" # Ejemplo: "Steam", "GamingDefault", etc.
 
 # --- VERIFICACIONES PREVIAS ---
@@ -50,7 +49,6 @@ try {
     } else {
         Write-Host "Creando el usuario '$KioskUserName'..." -ForegroundColor Cyan
         
-        #>> Se solicita contraseña, que es necesaria para la inicialización del perfil.
         Write-Host "Se requiere una contraseña temporal para crear e inicializar correctamente el perfil del usuario." -ForegroundColor Yellow
         Write-Host "Al final del script, tendrá la opción de eliminarla para permitir el inicio de sesión automático." -ForegroundColor Yellow
         do {
@@ -66,25 +64,23 @@ try {
         New-LocalUser -Name $KioskUserName -Password $Password -FullName "Kiosk Gaming Account" -Description "Cuenta de usuario para el modo kiosco de Steam."
         Write-Host "[OK] Usuario '$KioskUserName' creado exitosamente." -ForegroundColor Green
         
-        #>> MEJORA: Forzar la inicialización del perfil de usuario.
-        # Esto es crucial para que aplicaciones como Steam y OpenRGB puedan guardar datos.
-        # Se inicia un proceso simple y oculto como el nuevo usuario para que Windows cree su perfil.
-        Write-Host "Inicializando el perfil del usuario '$KioskUserName' para asegurar la persistencia de datos..." -ForegroundColor Cyan
+        # Inicializar el perfil del usuario
+        Write-Host "Inicializando el perfil del usuario '$KioskUserName'..." -ForegroundColor Cyan
         $processInfo = New-Object System.Diagnostics.ProcessStartInfo
         $processInfo.FileName = "cmd.exe"
-        $processInfo.Arguments = "/c exit" # Un comando rápido que no hace nada visible.
+        $processInfo.Arguments = "/c timeout /t 5 /nobreak >nul"
         $processInfo.UserName = $KioskUserName
         $processInfo.Password = $Password
         $processInfo.UseShellExecute = $false
         $processInfo.WindowStyle = 'Hidden'
         $process = [System.Diagnostics.Process]::Start($processInfo)
         $process.WaitForExit()
-        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR) # Limpiar la contraseña de la memoria
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
         
         if (Test-Path "C:\Users\$KioskUserName\AppData") {
             Write-Host "[OK] El perfil de usuario ha sido inicializado correctamente." -ForegroundColor Green
         } else {
-            Write-Warning "No se pudo verificar la inicialización del perfil de usuario. Las aplicaciones podrían no guardar su configuración."
+            Write-Warning "No se pudo verificar la inicialización del perfil de usuario."
         }
     }
     
@@ -102,8 +98,8 @@ try {
     exit
 }
 
-# --- FASE II: VERIFICACIÓN DE SOFTWARE Y CREACIÓN DE SCRIPT DE LANZAMIENTO ---
-Write-Host "`nIniciando Fase II: Verificación de software y creación de script de lanzamiento..." -ForegroundColor Yellow
+# --- FASE II: VERIFICACIÓN DE SOFTWARE Y CREACIÓN DE SCRIPTS DE LANZAMIENTO ---
+Write-Host "`nIniciando Fase II: Verificación de software y creación de scripts de lanzamiento..." -ForegroundColor Yellow
 
 # Función para obtener la ruta de Steam
 function Get-SteamPath {
@@ -118,7 +114,7 @@ if (-not $SteamPath) {
 $SteamExePath = Join-Path -Path $SteamPath -ChildPath "steam.exe"
 Write-Host "[OK] Ruta de Steam encontrada: $SteamExePath" -ForegroundColor Green
 
-#>> MEJORA: Buscar OpenRGB
+# Buscar OpenRGB
 function Get-OpenRGBPath {
     $pathFromRegistry = (Get-ItemProperty -Path "HKLM:\SOFTWARE\OpenRGB\OpenRGB" -Name "Install_Dir" -ErrorAction SilentlyContinue).Install_Dir
     if ($pathFromRegistry) {
@@ -143,41 +139,57 @@ if ($OpenRGBExePath) {
     Write-Warning "No se encontró la instalación de OpenRGB. Se omitirá su lanzamiento."
 }
 
-#>> MEJORA: Crear el contenido del script VBS para un lanzamiento silencioso.
+# CORRECCIÓN PRINCIPAL: Crear VBS con sintaxis correcta y manejo robusto
 $VbsContent = @"
-Set WshShell = CreateObject("WScript.Shell")
+On Error Resume Next
 
-' Lanza Steam en modo Big Picture de forma oculta
-WshShell.Run """$SteamExePath"" -bigpicture", 0, false
+Set objShell = CreateObject("WScript.Shell")
+
+' Cambiar al directorio de Steam para evitar problemas de ruta
+objShell.CurrentDirectory = "$SteamPath"
 
 "@
 
-#>> Añadir lógica para OpenRGB si fue encontrado
 if ($OpenRGBExePath) {
-    $openRgbArgs = "--startminimized"
     if (-not [string]::IsNullOrWhiteSpace($OpenRGBProfileName)) {
-        $openRgbArgs += " --profile $OpenRGBProfileName"
-        Write-Host "OpenRGB se configuró para cargar el perfil: '$OpenRGBProfileName'" -ForegroundColor Cyan
-    } else {
-        Write-Host "OpenRGB se configuró para iniciar minimizado sin un perfil específico." -ForegroundColor Cyan
-    }
+        $VbsContent += @"
 
-    $VbsContent += @"
+' Lanzar OpenRGB con perfil específico
+objShell.Run """$OpenRGBExePath"" --startminimized --profile ""$OpenRGBProfileName""", 0, False
+WScript.Sleep 2000
 
-' Espera 15 segundos para que Steam se inicie antes de lanzar OpenRGB
-WScript.Sleep(15000) 
-
-' Lanza OpenRGB minimizado y con el perfil especificado (si existe) de forma oculta
-WshShell.Run """$OpenRGBExePath"" $openRgbArgs", 0, false
 "@
+        Write-Host "OpenRGB se configurará para cargar el perfil: '$OpenRGBProfileName'" -ForegroundColor Cyan
+    } else {
+        $VbsContent += @"
+
+' Lanzar OpenRGB sin perfil específico
+objShell.Run """$OpenRGBExePath"" --startminimized", 0, False
+WScript.Sleep 2000
+
+"@
+        Write-Host "OpenRGB se configurará para iniciar minimizado sin un perfil específico." -ForegroundColor Cyan
+    }
 }
 
-# Crear el archivo VBS
+$VbsContent += @"
+
+' Lanzar Steam en modo Big Picture y esperar
+' CRÍTICO: Usar True para esperar que Steam termine antes de que el script VBS termine
+' Esto mantiene el proceso shell activo
+objShell.Run """$SteamExePath"" -bigpicture", 0, True
+
+' Si Steam se cierra, el script termina y Shell Launcher puede reiniciarlo
+WScript.Quit
+"@
+
+# Crear el archivo VBS con la sintaxis corregida
 try {
-    New-Item -Path $LauncherVbsPath -ItemType File -Force -Value $VbsContent | Out-Null
-    Write-Host "[OK] Script de lanzamiento VBS creado en: $LauncherVbsPath" -ForegroundColor Green
+    # Usar codificación ANSI para evitar problemas con caracteres especiales
+    [System.IO.File]::WriteAllText($LauncherVbsPath, $VbsContent, [System.Text.Encoding]::Default)
+    Write-Host "[OK] Script VBS creado en: $LauncherVbsPath" -ForegroundColor Green
 } catch {
-    Write-Error "No se pudo crear el script de lanzamiento VBS. Detalles: $_"
+    Write-Error "No se pudo crear el script VBS. Detalles: $_"
     exit
 }
 
@@ -186,7 +198,7 @@ Write-Host "`nIniciando Fase III: Configuración de Shell Launcher..." -Foregrou
 
 $COMPUTER = "localhost"
 $NAMESPACE = "root\standardcimv2\embedded"
-$restart_shell = 0 # Reinicia el shell si se cierra
+$restart_shell = 1 # MANTENER: Reinicia el shell si se cierra para mayor estabilidad
 
 function Get-UsernameSID($AccountName) {
     try {
@@ -214,9 +226,9 @@ try {
     $ShellLauncherClass.SetDefaultShell("explorer.exe", $restart_shell)
     Write-Host "[OK] Shell predeterminado configurado como 'explorer.exe'." -ForegroundColor Green
 
-    #>> Configurar el shell personalizado para lanzar el script VBS
-    $ShellLauncherClass.SetCustomShell($KioskUser_SID, $LauncherVbsPath, $null, $null, $restart_shell)
-    Write-Host "[OK] Shell personalizado para '$KioskUserName' configurado para lanzar '$LauncherVbsPath'." -ForegroundColor Green
+    # CRÍTICO: Usar wscript.exe para ejecutar el VBS, no directamente el archivo VBS
+    $ShellLauncherClass.SetCustomShell($KioskUser_SID, "wscript.exe ""$LauncherVbsPath""", $null, $null, $restart_shell)
+    Write-Host "[OK] Shell personalizado para '$KioskUserName' configurado para ejecutar VBS con wscript.exe." -ForegroundColor Green
 
     # Habilitar Shell Launcher
     $ShellLauncherClass.SetEnabled($TRUE)
@@ -231,9 +243,48 @@ try {
     exit
 }
 
+# --- CONFIGURACIÓN ADICIONAL PARA SOLUCIONAR PANTALLA NEGRA ---
+Write-Host "`nConfigurando ajustes adicionales para prevenir pantalla negra..." -ForegroundColor Yellow
+
+# Configurar el registro para mejorar la inicialización del usuario
+$UserInitPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+
+# Asegurar que Userinit se ejecute correctamente
+Set-ItemProperty -Path $UserInitPath -Name "Userinit" -Value "C:\Windows\system32\userinit.exe," -Force
+Write-Host "[OK] Configuración de Userinit verificada." -ForegroundColor Green
+
+# Configurar políticas de grupo locales para el usuario kiosco si es necesario
+$PolicyPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+if (!(Test-Path $PolicyPath)) {
+    New-Item -Path $PolicyPath -Force | Out-Null
+}
+
+# --- CONFIGURACIÓN ADICIONAL PARA VBS ---
+Write-Host "`nConfigurando permisos y asociaciones para archivos VBS..." -ForegroundColor Yellow
+
+# Verificar que WScript está disponible y configurado correctamente
+$WScriptPath = "$env:SystemRoot\System32\WScript.exe"
+if (Test-Path $WScriptPath) {
+    Write-Host "[OK] WScript.exe encontrado en: $WScriptPath" -ForegroundColor Green
+    
+    # Asegurar permisos de ejecución en el archivo VBS
+    try {
+        $acl = Get-Acl $LauncherVbsPath
+        $everyone = New-Object System.Security.Principal.SecurityIdentifier("S-1-1-0")
+        $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($everyone, "FullControl", "Allow")
+        $acl.SetAccessRule($accessRule)
+        Set-Acl $LauncherVbsPath $acl
+        Write-Host "[OK] Permisos configurados para el archivo VBS." -ForegroundColor Green
+    } catch {
+        Write-Warning "No se pudieron configurar los permisos del archivo VBS: $_"
+    }
+} else {
+    Write-Error "No se encontró WScript.exe. Esto podría causar problemas con la ejecución del VBS."
+}
+
 # --- FASE IV: CONFIGURACIÓN FINAL DE CONTRASEÑA ---
 Write-Host "`nIniciando Fase IV: Configuración final de contraseña..." -ForegroundColor Yellow
-Write-Warning "ADVERTENCIA DE SEGURIDAD: Eliminar la contraseña permitirá el inicio de sesión automático. Esto es conveniente para un kiosco, pero cualquier persona con acceso físico podrá usar esta cuenta."
+Write-Warning "ADVERTENCIA DE SEGURIDAD: Eliminar la contraseña permitirá el inicio de sesión automático."
 
 $choice = Read-Host "¿Desea eliminar la contraseña del usuario '$KioskUserName' para habilitar el autologin? (s/n)"
 
@@ -241,15 +292,18 @@ if ($choice -eq 's' -or $choice -eq 'S') {
     try {
         Set-LocalUser -Name $KioskUserName -Password ([securestring]::new())
         Write-Host "[OK] Se ha eliminado la contraseña para el usuario '$KioskUserName'." -ForegroundColor Green
+        
+        # Configurar inicio de sesión automático si se elimina la contraseña
+        $AutoLogonPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+        Set-ItemProperty -Path $AutoLogonPath -Name "AutoAdminLogon" -Value "1" -Force
+        Set-ItemProperty -Path $AutoLogonPath -Name "DefaultUserName" -Value $KioskUserName -Force
+        Set-ItemProperty -Path $AutoLogonPath -Name "DefaultPassword" -Value "" -Force
+        Set-ItemProperty -Path $AutoLogonPath -Name "AutoLogonCount" -Value "999999" -Force
+        Write-Host "[OK] Inicio de sesión automático configurado para '$KioskUserName'." -ForegroundColor Green
+        
     } catch {
         Write-Error "No se pudo eliminar la contraseña. Detalles: $_"
     }
 } else {
     Write-Host "Se conservará la contraseña del usuario. Deberá ingresarla en cada inicio de sesión." -ForegroundColor Cyan
 }
-
-# --- FINALIZACIÓN ---
-Write-Host "`n--- Proceso de configuración de Kiosco completado ---" -ForegroundColor Magenta
-Write-Host "Para verificar, cierre la sesión actual e inicie sesión como '$KioskUserName'." -ForegroundColor Magenta
-Write-Host "El sistema debería iniciar directamente en Steam (modo Big Picture) sin mostrar el escritorio." -ForegroundColor Magenta
-
