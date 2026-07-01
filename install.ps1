@@ -1,191 +1,439 @@
 # ===================================================================================
-# Script de Configuración de Kiosco con Shell Launcher para Steam, OpenRGB y MSI Afterburner
-# Versión: 3.1 - Seguridad Máxima: Contraseña Aleatoria Auto-Generada (Zero-Knowledge)
-# Archivo de referencia: install_afterburner_system_vbs_schtasks.ps1
+# Script de Configuración de Kiosco con Shell Launcher para Steam y OpenRGB
+# Versión: 2.3 - CORREGIDO - Soluciona problema de ejecución del VBS
+# Autor: Especialista en Automatización de Sistemas (Corregido por Claude)
 # Prerrequisitos: Windows 10/11 Enterprise/Education/Pro, PowerShell ejecutado como Administrador.
 # ===================================================================================
 
 # --- CONFIGURACIÓN DE VARIABLES ---
 $KioskUserName = "gamer"
-
-# >> GENERACIÓN AUTOMÁTICA DE CONTRASEÑA SEGURA (24 caracteres alfanuméricos + símbolos)
-$PasswordLength = 24
-$AllowedChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^*()-_=+'
-$KioskPasswordPlain = -join (1..$PasswordLength | ForEach-Object { $AllowedChars[(Get-Random -Maximum $AllowedChars.Length)] })
-
 $LauncherVbsPath = "C:\Users\Public\launch.vbs"
 
 #>> Variable para especificar el perfil de OpenRGB
-$OpenRGBProfileName = "Steam" 
+$OpenRGBProfileName = "Steam" # Ejemplo: "Steam", "GamingDefault", etc.
 
-#>> Configuración de MSI Afterburner
-$MSIAfterburnerProfileNumber = 1 # Perfil de Undervolt (1 a 5)
-$MSIAfterburnerTaskName = "GamingKiosk-MSI-Afterburner"
-$MSIAfterburnerHelperPath = "C:\Users\Public\launch-afterburner.ps1"
+#>> Variables para MSI Afterburner (undervolt) y RivaTuner Statistics Server (RTSS)
+$EnableAfterburner  = $true   # $true para lanzar MSI Afterburner automáticamente (requiere admin)
+$AfterburnerProfile = "1"     # Número de perfil de Afterburner a cargar al inicio (Profile1 = undervolt)
+$EnableRTSS         = $true   # $true para lanzar RivaTuner Statistics Server (no requiere admin)
+
+#>> NOTA DE SEGURIDAD: MSI Afterburner necesita privilegios de administrador para tocar el voltaje/
+#>> curva de la GPU. Un usuario de kiosco estándar no puede elevar sin que aparezca un aviso de UAC,
+#>> y en modo kiosco no hay forma de aceptar ese aviso (no hay escritorio de administrador visible).
+#>> La única forma de evitar el UAC es que la Tarea Programada se ejecute con "privilegios más altos"
+#>> Y que la cuenta ya sea Administrador (Task Scheduler eleva en silencio solo en ese caso).
+#>> Por eso, si $EnableAfterburner es $true, este script agrega a '$KioskUserName' al grupo
+#>> Administradores. Si no quieres que el usuario de kiosco sea admin, pon $MakeKioskUserAdmin = $false
+#>> y crea tú mismo una tarea programada usando una cuenta admin dedicada.
+$MakeKioskUserAdmin = $true
 
 # --- VERIFICACIONES PREVIAS ---
 Write-Host "Iniciando verificaciones previas..." -ForegroundColor Yellow
 
+# Verificación de privilegios de administrador
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Error "Este script debe ejecutarse con privilegios de Administrador. Por favor, reinicie PowerShell como Administrador."
     exit
 }
 Write-Host "[OK] Privilegios de administrador verificados." -ForegroundColor Green
 
+# Verificar edición de Windows
+$WindowsEdition = (Get-WmiObject -Class Win32_OperatingSystem).Caption
+Write-Host "Edición de Windows detectada: $WindowsEdition" -ForegroundColor Cyan
+if ($WindowsEdition -notmatch "Enterprise|Education|Pro") {
+    Write-Warning "Shell Launcher podría no ser compatible con su edición de Windows. Se requiere Enterprise, Education o Pro."
+}
+
 # Habilitación de la característica Shell Launcher si no está presente
 $feature = Get-WindowsOptionalFeature -Online -FeatureName Client-EmbeddedShellLauncher
 if ($feature.State -ne "Enabled") {
     Write-Host "La característica Shell Launcher no está habilitada. Habilitándola ahora..." -ForegroundColor Cyan
     Enable-WindowsOptionalFeature -Online -FeatureName Client-EmbeddedShellLauncher -All -NoRestart
+    Write-Host "[OK] Característica Shell Launcher habilitada. Se recomienda reiniciar el sistema después de completar el script." -ForegroundColor Green
+} else {
+    Write-Host "[OK] La característica Shell Launcher ya está habilitada." -ForegroundColor Green
 }
 
 # --- FASE I: CREACIÓN Y CONFIGURACIÓN DEL USUARIO ---
-Write-Host "`nIniciando Fase I: Configuración de la cuenta '$KioskUserName'..." -ForegroundColor Yellow
+Write-Host "`nIniciando Fase I: Creación y configuración de la cuenta de usuario '$KioskUserName'..." -ForegroundColor Yellow
 
 try {
     $ExistingUser = Get-LocalUser -Name $KioskUserName -ErrorAction SilentlyContinue
-    $Password = ConvertTo-SecureString $KioskPasswordPlain -AsPlainText -Force
-
     if ($ExistingUser) {
-        Write-Host "El usuario '$KioskUserName' ya existe. Rotando contraseña por una aleatoria ultra-segura..." -ForegroundColor Cyan
-        Set-LocalUser -Name $KioskUserName -Password $Password
+        Write-Host "El usuario '$KioskUserName' ya existe. Se omitirá la creación." -ForegroundColor Cyan
     } else {
-        Write-Host "Creando el usuario '$KioskUserName' con contraseña aleatoria invisible..." -ForegroundColor Cyan
-        New-LocalUser -Name $KioskUserName -Password $Password -FullName "Kiosk Gaming Account" -Description "Cuenta de usuario para el modo kiosco de Steam." -ErrorAction Stop
+        Write-Host "Creando el usuario '$KioskUserName'..." -ForegroundColor Cyan
         
-        # Inicializar el perfil del usuario de forma silenciosa
-        Write-Host "Inicializando el perfil del usuario..." -ForegroundColor Cyan
+        Write-Host "Se requiere una contraseña temporal para crear e inicializar correctamente el perfil del usuario." -ForegroundColor Yellow
+        Write-Host "Al final del script, tendrá la opción de eliminarla para permitir el inicio de sesión automático." -ForegroundColor Yellow
+        do {
+            $Password = Read-Host -AsSecureString "Introduzca una contraseña para '$KioskUserName' (mín. 8 caracteres)"
+            $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password)
+            $PlainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+            
+            if ($PlainPassword.Length -lt 8) {
+                Write-Warning "La contraseña debe tener al menos 8 caracteres."
+            }
+        } while ($PlainPassword.Length -lt 8)
+        
+        New-LocalUser -Name $KioskUserName -Password $Password -FullName "Kiosk Gaming Account" -Description "Cuenta de usuario para el modo kiosco de Steam."
+        Write-Host "[OK] Usuario '$KioskUserName' creado exitosamente." -ForegroundColor Green
+        
+        # Inicializar el perfil del usuario
+        Write-Host "Inicializando el perfil del usuario '$KioskUserName'..." -ForegroundColor Cyan
         $processInfo = New-Object System.Diagnostics.ProcessStartInfo
         $processInfo.FileName = "cmd.exe"
-        $processInfo.Arguments = "/c timeout /t 3 /nobreak >nul"
+        $processInfo.Arguments = "/c timeout /t 5 /nobreak >nul"
         $processInfo.UserName = $KioskUserName
         $processInfo.Password = $Password
         $processInfo.UseShellExecute = $false
         $processInfo.WindowStyle = 'Hidden'
         $process = [System.Diagnostics.Process]::Start($processInfo)
         $process.WaitForExit()
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
+        
+        if (Test-Path "C:\Users\$KioskUserName\AppData") {
+            Write-Host "[OK] El perfil de usuario ha sido inicializado correctamente." -ForegroundColor Green
+        } else {
+            Write-Warning "No se pudo verificar la inicialización del perfil de usuario."
+        }
     }
     
-    # Agregar a Usuarios y forzar rango de Administrador (indispensable para interactuar con la GPU/Undervolt)
-    Add-LocalGroupMember -Group "Users" -Member $KioskUserName -ErrorAction SilentlyContinue
-    $AdministratorsGroup = Get-LocalGroup -SID "S-1-5-32-544" -ErrorAction Stop
-    Add-LocalGroupMember -Group $AdministratorsGroup -Member $KioskUserName -ErrorAction SilentlyContinue
-    Write-Host "[OK] Usuario '$KioskUserName' configurado como Administrador." -ForegroundColor Green
+    # Agregar al grupo Administradores si se requiere para elevar MSI Afterburner sin UAC
+    if ($MakeKioskUserAdmin -and $EnableAfterburner) {
+        try {
+            Add-LocalGroupMember -Group "Administrators" -Member $KioskUserName -ErrorAction SilentlyContinue
+            Write-Host "[OK] Usuario '$KioskUserName' agregado al grupo Administradores (necesario para elevar MSI Afterburner sin mostrar UAC)." -ForegroundColor Green
+        } catch {
+            Write-Warning "No se pudo agregar a '$KioskUserName' al grupo Administradores. Detalles: $_"
+        }
+    }
 
-    # Ocultar o mostrar en pantalla de login según se requiera (se mantiene visible por si se necesita mantenimiento)
+    # Asegurar visibilidad en la pantalla de login
+    Add-LocalGroupMember -Group "Users" -Member $KioskUserName -ErrorAction SilentlyContinue
     $SpecialAccountsPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList"
-    if (!(Test-Path $SpecialAccountsPath)) { New-Item -Path $SpecialAccountsPath -Force | Out-Null }
+    if (!(Test-Path $SpecialAccountsPath)) {
+        New-Item -Path $SpecialAccountsPath -Force | Out-Null
+    }
     Set-ItemProperty -Path $SpecialAccountsPath -Name $KioskUserName -Value 1 -Type DWord -ErrorAction SilentlyContinue
+    Write-Host "[OK] Usuario configurado como visible en la pantalla de login." -ForegroundColor Green
 
 } catch {
-    Write-Error "Error durante la fase de creación del usuario: $_"
+    Write-Error "Error durante la fase de creación del usuario. Detalles: $_"
     exit
 }
 
 # --- FASE II: VERIFICACIÓN DE SOFTWARE Y CREACIÓN DE SCRIPTS DE LANZAMIENTO ---
-Write-Host "`nIniciando Fase II: Configuración de MSI Afterburner..." -ForegroundColor Yellow
+Write-Host "`nIniciando Fase II: Verificación de software y creación de scripts de lanzamiento..." -ForegroundColor Yellow
 
-function Get-SteamPath { return (Get-ItemProperty -Path "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam" -Name "InstallPath" -ErrorAction SilentlyContinue).InstallPath }
+# Función para obtener la ruta de Steam
+function Get-SteamPath {
+    return (Get-ItemProperty -Path "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam" -Name "InstallPath" -ErrorAction SilentlyContinue).InstallPath
+}
+
 $SteamPath = Get-SteamPath
+if (-not $SteamPath) {
+    Write-Error "No se encontró la instalación de Steam. Por favor, instale Steam y vuelva a ejecutar el script."
+    exit
+}
 $SteamExePath = Join-Path -Path $SteamPath -ChildPath "steam.exe"
+Write-Host "[OK] Ruta de Steam encontrada: $SteamExePath" -ForegroundColor Green
 
+# Buscar OpenRGB
 function Get-OpenRGBPath {
     $pathFromRegistry = (Get-ItemProperty -Path "HKLM:\SOFTWARE\OpenRGB\OpenRGB" -Name "Install_Dir" -ErrorAction SilentlyContinue).Install_Dir
-    if ($pathFromRegistry) { $exePath = Join-Path $pathFromRegistry "OpenRGB.exe"; if (Test-Path $exePath) { return $exePath } }
+    if ($pathFromRegistry) {
+        $exePath = Join-Path $pathFromRegistry "OpenRGB.exe"
+        if (Test-Path $exePath) { return $exePath }
+    }
+    # Búsqueda alternativa
+    $commonPaths = @(
+        "$env:ProgramFiles\OpenRGB\OpenRGB.exe",
+        "$env:ProgramFiles(x86)\OpenRGB\OpenRGB.exe"
+    )
+    foreach ($path in $commonPaths) {
+        if (Test-Path $path) { return $path }
+    }
     return $null
 }
+
 $OpenRGBExePath = Get-OpenRGBPath
+if ($OpenRGBExePath) {
+    Write-Host "[OK] Ruta de OpenRGB encontrada: $OpenRGBExePath" -ForegroundColor Green
+} else {
+    Write-Warning "No se encontró la instalación de OpenRGB. Se omitirá su lanzamiento."
+}
 
+# Buscar MSI Afterburner
 function Get-MSIAfterburnerPath {
-    $commonPaths = @("${env:ProgramFiles(x86)}\MSI Afterburner\MSIAfterburner.exe", "$env:ProgramFiles\MSI Afterburner\MSIAfterburner.exe")
-    foreach ($path in $commonPaths) { if ($path -and (Test-Path $path)) { return $path } }
+    $commonPaths = @(
+        "${env:ProgramFiles(x86)}\MSI Afterburner\MSIAfterburner.exe",
+        "$env:ProgramFiles\MSI Afterburner\MSIAfterburner.exe"
+    )
+    foreach ($path in $commonPaths) {
+        if (Test-Path $path) { return $path }
+    }
+    # Búsqueda alternativa en el registro de desinstalación
+    $uninstallKeys = Get-ChildItem "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall" -ErrorAction SilentlyContinue |
+        Get-ItemProperty -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -match "MSI Afterburner" }
+    if ($uninstallKeys) {
+        $installLoc = ($uninstallKeys | Select-Object -First 1).InstallLocation
+        if ($installLoc) {
+            $exePath = Join-Path $installLoc "MSIAfterburner.exe"
+            if (Test-Path $exePath) { return $exePath }
+        }
+    }
     return $null
 }
 
-$MSIAfterburnerExePath = Get-MSIAfterburnerPath
-if ($MSIAfterburnerExePath) {
-    Write-Host "[OK] MSI Afterburner detectado." -ForegroundColor Green
-
-    try {
-        $AfterburnerDirectory = Split-Path $MSIAfterburnerExePath -Parent
-
-        # Crear script asistente para aplicar el perfil de undervolt de forma limpia
-        $AfterburnerHelperContent = @"
-`$existing = Get-Process -Name 'MSIAfterburner' -ErrorAction SilentlyContinue
-if (`$existing) {
-    `$existing | Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
+# Buscar RivaTuner Statistics Server (RTSS)
+function Get-RTSSPath {
+    $commonPaths = @(
+        "${env:ProgramFiles(x86)}\RivaTuner Statistics Server\RTSS.exe",
+        "$env:ProgramFiles\RivaTuner Statistics Server\RTSS.exe"
+    )
+    foreach ($path in $commonPaths) {
+        if (Test-Path $path) { return $path }
+    }
+    return $null
 }
-Start-Process `
-    -FilePath '$($MSIAfterburnerExePath.Replace("'", "''"))' `
-    -ArgumentList '-Profile$MSIAfterburnerProfileNumber', '-Minimized' `
-    -WorkingDirectory '$($AfterburnerDirectory.Replace("'", "''"))'
-"@
 
-        [System.IO.File]::WriteAllText($MSIAfterburnerHelperPath, $AfterburnerHelperContent, [System.Text.UTF8Encoding]::new($true))
-
-        $AfterburnerAction = New-ScheduledTaskAction `
-            -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
-            -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$MSIAfterburnerHelperPath`""
-
-        # Configurar ejecución interactiva elevada bajo el contexto del usuario gamer (ahora administrador)
-        $AfterburnerPrincipal = New-ScheduledTaskPrincipal -UserId $KioskUserName -LogonType Interactive -RunLevel Highest
-
-        $AfterburnerSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
-
-        Register-ScheduledTask -TaskName $MSIAfterburnerTaskName -Action $AfterburnerAction -Principal $AfterburnerPrincipal -Settings $AfterburnerSettings -Force | Out-Null
-        Write-Host "[OK] Tarea programada '$MSIAfterburnerTaskName' vinculada al entorno interactivo." -ForegroundColor Green
-    } catch {
-        Write-Warning "Fallo al crear la tarea programada: $_"
+$MSIAfterburnerExePath = $null
+if ($EnableAfterburner) {
+    $MSIAfterburnerExePath = Get-MSIAfterburnerPath
+    if ($MSIAfterburnerExePath) {
+        Write-Host "[OK] Ruta de MSI Afterburner encontrada: $MSIAfterburnerExePath" -ForegroundColor Green
+    } else {
+        Write-Warning "No se encontró la instalación de MSI Afterburner. Se omitirá su configuración."
     }
 }
 
-# --- CREACIÓN DEL ARCHIVO LANZADOR VBS ---
-$VbsContent = "On Error Resume Next`nSet objShell = CreateObject(`"WScript.Shell`")`nobjShell.CurrentDirectory = `"$SteamPath`"`n"
-if ($OpenRGBExePath) {
-    $VbsContent += "objShell.Run `"`"$OpenRGBExePath`" --startminimized --profile `"$OpenRGBProfileName`"`", 0, False`nWScript.Sleep 2000`n"
+$RTSSExePath = $null
+if ($EnableRTSS) {
+    $RTSSExePath = Get-RTSSPath
+    if ($RTSSExePath) {
+        Write-Host "[OK] Ruta de RivaTuner Statistics Server encontrada: $RTSSExePath" -ForegroundColor Green
+    } else {
+        Write-Warning "No se encontró la instalación de RivaTuner Statistics Server. Se omitirá su lanzamiento."
+    }
 }
-if ($MSIAfterburnerExePath) {
-    $VbsContent += "objShell.Run `"`"$env:SystemRoot\System32\schtasks.exe`" /Run /TN `"$MSIAfterburnerTaskName`"`", 0, True`nWScript.Sleep 3000`n"
-}
-$VbsContent += "objShell.Run `"`"$SteamExePath`" -bigpicture`", 0, True`nWScript.Quit"
 
-[System.IO.File]::WriteAllText($LauncherVbsPath, $VbsContent, [System.Text.Encoding]::Default)
+# CORRECCIÓN PRINCIPAL: Crear VBS con sintaxis correcta y manejo robusto
+$VbsContent = @"
+On Error Resume Next
+
+Set objShell = CreateObject("WScript.Shell")
+
+' Cambiar al directorio de Steam para evitar problemas de ruta
+objShell.CurrentDirectory = "$SteamPath"
+
+"@
+
+if ($OpenRGBExePath) {
+    if (-not [string]::IsNullOrWhiteSpace($OpenRGBProfileName)) {
+        $VbsContent += @"
+
+' Lanzar OpenRGB con perfil específico
+objShell.Run """$OpenRGBExePath"" --startminimized --profile ""$OpenRGBProfileName""", 0, False
+WScript.Sleep 2000
+
+"@
+        Write-Host "OpenRGB se configurará para cargar el perfil: '$OpenRGBProfileName'" -ForegroundColor Cyan
+    } else {
+        $VbsContent += @"
+
+' Lanzar OpenRGB sin perfil específico
+objShell.Run """$OpenRGBExePath"" --startminimized", 0, False
+WScript.Sleep 2000
+
+"@
+        Write-Host "OpenRGB se configurará para iniciar minimizado sin un perfil específico." -ForegroundColor Cyan
+    }
+}
+
+if ($RTSSExePath) {
+    $VbsContent += @"
+
+' Lanzar RivaTuner Statistics Server (RTSS) para el overlay en pantalla
+' No requiere permisos de administrador
+objShell.Run """$RTSSExePath""", 0, False
+WScript.Sleep 1000
+
+"@
+    Write-Host "RTSS se configurará para iniciarse junto con el kiosco." -ForegroundColor Cyan
+}
+
+$VbsContent += @"
+
+' Lanzar Steam en modo Big Picture y esperar
+' CRÍTICO: Usar True para esperar que Steam termine antes de que el script VBS termine
+' Esto mantiene el proceso shell activo
+objShell.Run """$SteamExePath"" -bigpicture", 0, True
+
+' Si Steam se cierra, el script termina y Shell Launcher puede reiniciarlo
+WScript.Quit
+"@
+
+# Crear el archivo VBS con la sintaxis corregida
+try {
+    # Usar codificación ANSI para evitar problemas con caracteres especiales
+    [System.IO.File]::WriteAllText($LauncherVbsPath, $VbsContent, [System.Text.Encoding]::Default)
+    Write-Host "[OK] Script VBS creado en: $LauncherVbsPath" -ForegroundColor Green
+} catch {
+    Write-Error "No se pudo crear el script VBS. Detalles: $_"
+    exit
+}
 
 # --- FASE III: CONFIGURACIÓN DE SHELL LAUNCHER ---
+Write-Host "`nIniciando Fase III: Configuración de Shell Launcher..." -ForegroundColor Yellow
+
+$COMPUTER = "localhost"
+$NAMESPACE = "root\standardcimv2\embedded"
+$restart_shell = 1 # MANTENER: Reinicia el shell si se cierra para mayor estabilidad
+
+function Get-UsernameSID($AccountName) {
+    try {
+        return (New-Object System.Security.Principal.NTAccount($AccountName)).Translate([System.Security.Principal.SecurityIdentifier]).Value
+    } catch {
+        Write-Error "No se pudo obtener el SID para la cuenta '$AccountName'. Detalles: $_"
+        return $null
+    }
+}
+
 try {
-    $ShellLauncherClass = [wmiclass]"\\localhost\root\standardcimv2\embedded:WESL_UserSetting"
-    $KioskUser_SID = (New-Object System.Security.Principal.NTAccount($KioskUserName)).Translate([System.Security.Principal.SecurityIdentifier]).Value
-    
-    try { $ShellLauncherClass.RemoveCustomShell($KioskUser_SID) } catch {}
-    $ShellLauncherClass.SetDefaultShell("explorer.exe", 1)
-    $ShellLauncherClass.SetCustomShell($KioskUser_SID, "wscript.exe ""$LauncherVbsPath""", $null, $null, 1)
+    $ShellLauncherClass = [wmiclass]"\\$COMPUTER\${NAMESPACE}:WESL_UserSetting"
+    $KioskUser_SID = Get-UsernameSID($KioskUserName)
+    if (-not $KioskUser_SID) { exit }
+
+    Write-Host "[OK] SID para '$KioskUserName' obtenido: $KioskUser_SID" -ForegroundColor Green
+
+    # Limpiar configuraciones previas para este usuario
+    try {
+        $ShellLauncherClass.RemoveCustomShell($KioskUser_SID)
+        Write-Host "Limpiando configuración de Shell Launcher previa para el usuario." -ForegroundColor Cyan
+    } catch {}
+
+    # Configurar el shell predeterminado (explorer.exe) para todos los demás
+    $ShellLauncherClass.SetDefaultShell("explorer.exe", $restart_shell)
+    Write-Host "[OK] Shell predeterminado configurado como 'explorer.exe'." -ForegroundColor Green
+
+    # CRÍTICO: Usar wscript.exe para ejecutar el VBS, no directamente el archivo VBS
+    $ShellLauncherClass.SetCustomShell($KioskUser_SID, "wscript.exe ""$LauncherVbsPath""", $null, $null, $restart_shell)
+    Write-Host "[OK] Shell personalizado para '$KioskUserName' configurado para ejecutar VBS con wscript.exe." -ForegroundColor Green
+
+    # Habilitar Shell Launcher
     $ShellLauncherClass.SetEnabled($TRUE)
-    Write-Host "[OK] Shell Launcher enlazado al script VBS." -ForegroundColor Green
+    if (($ShellLauncherClass.IsEnabled()).Enabled) {
+        Write-Host "[OK] Shell Launcher ha sido habilitado." -ForegroundColor Green
+    } else {
+        Write-Warning "No se pudo habilitar Shell Launcher."
+    }
+
 } catch {
-    Write-Error "Error en configuración de Shell Launcher: $_"
+    Write-Error "Ocurrió un error durante la configuración de WMI. Detalles: $_"
+    exit
 }
 
-# --- FASE IV: CONFIGURACIÓN AUTOMÁTICA DEL INICIO DE SESIÓN (AUTOLOGIN CON CONTRASEÑA ROTADA) ---
-Write-Host "`nIniciando Fase IV: Inyectando credenciales criptográficas en el registro..." -ForegroundColor Yellow
+# --- FASE III.5: CONFIGURACIÓN DE MSI AFTERBURNER (INICIO ELEVADO AUTOMÁTICO) ---
+# MSI Afterburner necesita permisos de administrador para aplicar el undervolt.
+# Se usa una Tarea Programada con "Ejecutar con los privilegios más altos" disparada al inicio
+# de sesión de '$KioskUserName'. Esto SOLO evita el aviso de UAC si la cuenta ya es Administrador
+# (ver $MakeKioskUserAdmin más arriba); de lo contrario Windows igual mostrará el UAC y, como no
+# hay escritorio para aceptarlo en modo kiosco, Afterburner nunca llegará a aplicarse.
+Write-Host "`nIniciando Fase III.5: Configuración de MSI Afterburner con inicio elevado..." -ForegroundColor Yellow
 
-try {
-    $AutoLogonPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-    Set-ItemProperty -Path $AutoLogonPath -Name "AutoAdminLogon" -Value "1" -Force
-    Set-ItemProperty -Path $AutoLogonPath -Name "DefaultUserName" -Value $KioskUserName -Force
-    Set-ItemProperty -Path $AutoLogonPath -Name "DefaultPassword" -Value $KioskPasswordPlain -Force
-    Set-ItemProperty -Path $AutoLogonPath -Name "AutoLogonCount" -Value "999999" -Force
+if ($EnableAfterburner -and $MSIAfterburnerExePath) {
+    $AfterburnerTaskName = "KioskMSIAfterburner_$KioskUserName"
+    try {
+        # Eliminar una tarea previa del mismo nombre para evitar duplicados al re-ejecutar el script
+        Unregister-ScheduledTask -TaskName $AfterburnerTaskName -Confirm:$false -ErrorAction SilentlyContinue
+
+        $AbAction    = New-ScheduledTaskAction -Execute $MSIAfterburnerExePath -Argument "-Profile$AfterburnerProfile -m"
+        $AbTrigger   = New-ScheduledTaskTrigger -AtLogOn -User $KioskUserName
+        $AbTrigger.Delay = "PT10S"   # Espera 10s tras el logon para que el escritorio ya esté listo
+        $AbPrincipal = New-ScheduledTaskPrincipal -UserId $KioskUserName -LogonType Interactive -RunLevel Highest
+        $AbSettings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+
+        Register-ScheduledTask -TaskName $AfterburnerTaskName -Action $AbAction -Trigger $AbTrigger `
+            -Principal $AbPrincipal -Settings $AbSettings `
+            -Description "Lanza MSI Afterburner elevado con Profile$AfterburnerProfile (undervolt) al iniciar sesión de $KioskUserName." | Out-Null
+
+        Write-Host "[OK] Tarea programada '$AfterburnerTaskName' creada. Afterburner se ejecutará en segundo plano con Profile$AfterburnerProfile al iniciar sesión." -ForegroundColor Green
+
+        if (-not $MakeKioskUserAdmin) {
+            Write-Warning "El usuario '$KioskUserName' NO es Administrador. La tarea programada NO podrá elevar en silencio y Windows mostrará un aviso de UAC que quedará bloqueado en modo kiosco. Cambie `$MakeKioskUserAdmin = `$true y vuelva a ejecutar el script."
+        }
+    } catch {
+        Write-Error "No se pudo crear la tarea programada para MSI Afterburner. Detalles: $_"
+    }
+} elseif ($EnableAfterburner -and -not $MSIAfterburnerExePath) {
+    Write-Warning "MSI Afterburner no fue encontrado, se omite la creación de la tarea programada."
+} else {
+    Write-Host "Lanzamiento de MSI Afterburner deshabilitado (`$EnableAfterburner = `$false)." -ForegroundColor Cyan
+}
+
+# --- CONFIGURACIÓN ADICIONAL PARA SOLUCIONAR PANTALLA NEGRA ---
+Write-Host "`nConfigurando ajustes adicionales para prevenir pantalla negra..." -ForegroundColor Yellow
+
+# Configurar el registro para mejorar la inicialización del usuario
+$UserInitPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+
+# Asegurar que Userinit se ejecute correctamente
+Set-ItemProperty -Path $UserInitPath -Name "Userinit" -Value "C:\Windows\system32\userinit.exe," -Force
+Write-Host "[OK] Configuración de Userinit verificada." -ForegroundColor Green
+
+# Configurar políticas de grupo locales para el usuario kiosco si es necesario
+$PolicyPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+if (!(Test-Path $PolicyPath)) {
+    New-Item -Path $PolicyPath -Force | Out-Null
+}
+
+# --- CONFIGURACIÓN ADICIONAL PARA VBS ---
+Write-Host "`nConfigurando permisos y asociaciones para archivos VBS..." -ForegroundColor Yellow
+
+# Verificar que WScript está disponible y configurado correctamente
+$WScriptPath = "$env:SystemRoot\System32\WScript.exe"
+if (Test-Path $WScriptPath) {
+    Write-Host "[OK] WScript.exe encontrado en: $WScriptPath" -ForegroundColor Green
     
-    # Asignar permisos limpios al archivo VBS
-    $acl = Get-Acl $LauncherVbsPath
-    $everyone = New-Object System.Security.Principal.SecurityIdentifier("S-1-1-0")
-    $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($everyone, "FullControl", "Allow")
-    $acl.SetAccessRule($accessRule)
-    Set-Acl $LauncherVbsPath $acl
-
-    Write-Host "[OK] Autologon configurado con éxito. Nadie conoce la clave generada y el login es inmediato." -ForegroundColor Green
-} catch {
-    Write-Error "Error configurando el inicio automático: $_"
+    # Asegurar permisos de ejecución en el archivo VBS
+    try {
+        $acl = Get-Acl $LauncherVbsPath
+        $everyone = New-Object System.Security.Principal.SecurityIdentifier("S-1-1-0")
+        $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($everyone, "FullControl", "Allow")
+        $acl.SetAccessRule($accessRule)
+        Set-Acl $LauncherVbsPath $acl
+        Write-Host "[OK] Permisos configurados para el archivo VBS." -ForegroundColor Green
+    } catch {
+        Write-Warning "No se pudieron configurar los permisos del archivo VBS: $_"
+    }
+} else {
+    Write-Error "No se encontró WScript.exe. Esto podría causar problemas con la ejecución del VBS."
 }
 
-Write-Host "`n[PROCESO COMPLETADO] Sistema blindado y automatizado. Reinicia para arrancar." -ForegroundColor Green
+# --- FASE IV: CONFIGURACIÓN FINAL DE CONTRASEÑA ---
+Write-Host "`nIniciando Fase IV: Configuración final de contraseña..." -ForegroundColor Yellow
+Write-Warning "ADVERTENCIA DE SEGURIDAD: Eliminar la contraseña permitirá el inicio de sesión automático."
+
+$choice = Read-Host "¿Desea eliminar la contraseña del usuario '$KioskUserName' para habilitar el autologin? (s/n)"
+
+if ($choice -eq 's' -or $choice -eq 'S') {
+    try {
+        Set-LocalUser -Name $KioskUserName -Password ([securestring]::new())
+        Write-Host "[OK] Se ha eliminado la contraseña para el usuario '$KioskUserName'." -ForegroundColor Green
+        
+        # Configurar inicio de sesión automático si se elimina la contraseña
+        $AutoLogonPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+        Set-ItemProperty -Path $AutoLogonPath -Name "AutoAdminLogon" -Value "1" -Force
+        Set-ItemProperty -Path $AutoLogonPath -Name "DefaultUserName" -Value $KioskUserName -Force
+        Set-ItemProperty -Path $AutoLogonPath -Name "DefaultPassword" -Value "" -Force
+        Set-ItemProperty -Path $AutoLogonPath -Name "AutoLogonCount" -Value "999999" -Force
+        Write-Host "[OK] Inicio de sesión automático configurado para '$KioskUserName'." -ForegroundColor Green
+        
+    } catch {
+        Write-Error "No se pudo eliminar la contraseña. Detalles: $_"
+    }
+} else {
+    Write-Host "Se conservará la contraseña del usuario. Deberá ingresarla en cada inicio de sesión." -ForegroundColor Cyan
+}
