@@ -1,6 +1,6 @@
 # ===================================================================================
 # Script de Configuración de Kiosco con Shell Launcher para Steam y OpenRGB
-# Versión: 2.3 - CORREGIDO - Soluciona problema de ejecución del VBS
+# Versión: 2.2 - CORREGIDO - Soluciona problema de ejecución del VBS
 # Autor: Especialista en Automatización de Sistemas (Corregido por Claude)
 # Prerrequisitos: Windows 10/11 Enterprise/Education/Pro, PowerShell ejecutado como Administrador.
 # ===================================================================================
@@ -12,10 +12,8 @@ $LauncherVbsPath = "C:\Users\Public\launch.vbs"
 #>> Variable para especificar el perfil de OpenRGB
 $OpenRGBProfileName = "Steam" # Ejemplo: "Steam", "GamingDefault", etc.
 
-#>> Variables para MSI Afterburner (undervolt) y RivaTuner Statistics Server (RTSS)
 $EnableAfterburner  = $true   # $true para lanzar MSI Afterburner automáticamente (requiere admin)
 $AfterburnerProfile = "1"     # Número de perfil de Afterburner a cargar al inicio (Profile1 = undervolt)
-$EnableRTSS         = $true   # $true para lanzar RivaTuner Statistics Server (no requiere admin)
 
 #>> NOTA DE SEGURIDAD: MSI Afterburner necesita privilegios de administrador para tocar el voltaje/
 #>> curva de la GPU. Un usuario de kiosco estándar no puede elevar sin que aparezca un aviso de UAC,
@@ -187,17 +185,6 @@ function Get-MSIAfterburnerPath {
     return $null
 }
 
-# Buscar RivaTuner Statistics Server (RTSS)
-function Get-RTSSPath {
-    $commonPaths = @(
-        "${env:ProgramFiles(x86)}\RivaTuner Statistics Server\RTSS.exe",
-        "$env:ProgramFiles\RivaTuner Statistics Server\RTSS.exe"
-    )
-    foreach ($path in $commonPaths) {
-        if (Test-Path $path) { return $path }
-    }
-    return $null
-}
 
 $MSIAfterburnerExePath = $null
 if ($EnableAfterburner) {
@@ -206,16 +193,6 @@ if ($EnableAfterburner) {
         Write-Host "[OK] Ruta de MSI Afterburner encontrada: $MSIAfterburnerExePath" -ForegroundColor Green
     } else {
         Write-Warning "No se encontró la instalación de MSI Afterburner. Se omitirá su configuración."
-    }
-}
-
-$RTSSExePath = $null
-if ($EnableRTSS) {
-    $RTSSExePath = Get-RTSSPath
-    if ($RTSSExePath) {
-        Write-Host "[OK] Ruta de RivaTuner Statistics Server encontrada: $RTSSExePath" -ForegroundColor Green
-    } else {
-        Write-Warning "No se encontró la instalación de RivaTuner Statistics Server. Se omitirá su lanzamiento."
     }
 }
 
@@ -250,18 +227,6 @@ WScript.Sleep 2000
 "@
         Write-Host "OpenRGB se configurará para iniciar minimizado sin un perfil específico." -ForegroundColor Cyan
     }
-}
-
-if ($RTSSExePath) {
-    $VbsContent += @"
-
-' Lanzar RivaTuner Statistics Server (RTSS) para el overlay en pantalla
-' No requiere permisos de administrador
-objShell.Run """$RTSSExePath""", 0, False
-WScript.Sleep 1000
-
-"@
-    Write-Host "RTSS se configurará para iniciarse junto con el kiosco." -ForegroundColor Cyan
 }
 
 $VbsContent += @"
