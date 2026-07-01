@@ -1,6 +1,6 @@
 # ===================================================================================
 # Script de Configuración de Kiosco con Shell Launcher para Steam, OpenRGB y MSI Afterburner
-# Versión: 2.4 - MSI Afterburner como SYSTEM sin hacer administradora la cuenta gamer
+# Versión: 2.5 - MSI Afterburner como SYSTEM invocado explícitamente desde el VBS
 # Autor: Especialista en Automatización de Sistemas (Corregido por Claude)
 # Prerrequisitos: Windows 10/11 Enterprise/Education/Pro, PowerShell ejecutado como Administrador.
 # ===================================================================================
@@ -200,8 +200,8 @@ if ($MSIAfterburnerExePath) {
     Write-Host "[OK] Ruta de MSI Afterburner encontrada: $MSIAfterburnerExePath" -ForegroundColor Green
 
     try {
-        # La tarea se ejecuta como SYSTEM y se activa al iniciar sesión el usuario kiosco.
-        # De este modo, la cuenta gamer permanece como usuario estándar y no aparece UAC.
+        # La tarea se ejecuta como SYSTEM, pero no usa un disparador de inicio de sesión.
+        # El VBS del kiosco la inicia explícitamente mediante schtasks.exe para controlar el orden.
         $AfterburnerDirectory = Split-Path $MSIAfterburnerExePath -Parent
 
         # Crear un script auxiliar para evitar problemas de comillas dentro de la tarea.
@@ -228,10 +228,6 @@ Start-Process `
             -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
             -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$MSIAfterburnerHelperPath`""
 
-        $AfterburnerTrigger = New-ScheduledTaskTrigger `
-            -AtLogOn `
-            -User "$env:COMPUTERNAME\$KioskUserName"
-
         $AfterburnerPrincipal = New-ScheduledTaskPrincipal `
             -UserId "NT AUTHORITY\SYSTEM" `
             -LogonType ServiceAccount `
@@ -246,13 +242,21 @@ Start-Process `
         Register-ScheduledTask `
             -TaskName $MSIAfterburnerTaskName `
             -Action $AfterburnerAction `
-            -Trigger $AfterburnerTrigger `
             -Principal $AfterburnerPrincipal `
             -Settings $AfterburnerSettings `
-            -Description "Inicia MSI Afterburner como SYSTEM y aplica Profile$MSIAfterburnerProfileNumber al iniciar sesión '$KioskUserName'." `
+            -Description "Inicia MSI Afterburner como SYSTEM y aplica Profile$MSIAfterburnerProfileNumber cuando launch.vbs la invoca." `
             -Force | Out-Null
 
-        Write-Host "[OK] Tarea '$MSIAfterburnerTaskName' creada como SYSTEM para aplicar Profile$MSIAfterburnerProfileNumber al iniciar sesión." -ForegroundColor Green
+        # Conceder al usuario estándar permiso de lectura y ejecución sobre esta tarea.
+        # Sin este permiso, schtasks.exe /Run puede devolver "Acceso denegado" al ejecutarse desde el kiosco.
+        $KioskUserSid = (Get-LocalUser -Name $KioskUserName -ErrorAction Stop).SID.Value
+        $TaskService = New-Object -ComObject "Schedule.Service"
+        $TaskService.Connect()
+        $RegisteredTask = $TaskService.GetFolder("\").GetTask("\$MSIAfterburnerTaskName")
+        $TaskSddl = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGX;;;$KioskUserSid)"
+        $RegisteredTask.SetSecurityDescriptor($TaskSddl, 0)
+
+        Write-Host "[OK] Tarea '$MSIAfterburnerTaskName' creada como SYSTEM y autorizada para ser iniciada por '$KioskUserName'." -ForegroundColor Green
     } catch {
         Write-Warning "No se pudo crear la tarea de MSI Afterburner: $_"
         $MSIAfterburnerExePath = $null
@@ -297,8 +301,11 @@ WScript.Sleep 2000
 if ($MSIAfterburnerExePath) {
     $VbsContent += @"
 
-' MSI Afterburner se inicia automáticamente mediante una tarea como SYSTEM al iniciar sesión.
-' Dar unos segundos para que se aplique el perfil antes de lanzar Steam.
+' Iniciar explícitamente la tarea elevada de MSI Afterburner.
+' El proceso real se ejecuta como SYSTEM; la cuenta gamer permanece como usuario estándar.
+intTaskResult = objShell.Run("""$env:SystemRoot\System32\schtasks.exe"" /Run /TN ""$MSIAfterburnerTaskName""", 0, True)
+
+' Esperar a que la tarea aplique Profile$MSIAfterburnerProfileNumber antes de abrir Steam.
 WScript.Sleep 3000
 
 "@
