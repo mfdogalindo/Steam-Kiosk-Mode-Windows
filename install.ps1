@@ -1,6 +1,6 @@
-﻿# ===================================================================================
-# Script de Configuración de Kiosco con Shell Launcher para Steam y OpenRGB
-# Versión: 2.2 - CORREGIDO - Soluciona problema de ejecución del VBS
+# ===================================================================================
+# Script de Configuración de Kiosco con Shell Launcher para Steam, OpenRGB y MSI Afterburner
+# Versión: 2.4 - MSI Afterburner como SYSTEM sin hacer administradora la cuenta gamer
 # Autor: Especialista en Automatización de Sistemas (Corregido por Claude)
 # Prerrequisitos: Windows 10/11 Enterprise/Education/Pro, PowerShell ejecutado como Administrador.
 # ===================================================================================
@@ -11,6 +11,11 @@ $LauncherVbsPath = "C:\Users\Public\launch.vbs"
 
 #>> Variable para especificar el perfil de OpenRGB
 $OpenRGBProfileName = "Steam" # Ejemplo: "Steam", "GamingDefault", etc.
+
+#>> Configuración de MSI Afterburner
+$MSIAfterburnerProfileNumber = 1 # Valores válidos: 1 a 5
+$MSIAfterburnerTaskName = "GamingKiosk-MSI-Afterburner"
+$MSIAfterburnerHelperPath = "C:\Users\Public\launch-afterburner.ps1"
 
 # --- VERIFICACIONES PREVIAS ---
 Write-Host "Iniciando verificaciones previas..." -ForegroundColor Yellow
@@ -86,6 +91,21 @@ try {
     
     # Asegurar visibilidad en la pantalla de login
     Add-LocalGroupMember -Group "Users" -Member $KioskUserName -ErrorAction SilentlyContinue
+
+    # Mantener la cuenta del kiosco como usuario estándar.
+    # Si una versión anterior del script la agregó a Administradores, se elimina aquí.
+    $AdministratorsGroup = Get-LocalGroup -SID "S-1-5-32-544" -ErrorAction Stop
+    $KioskUserObject = Get-LocalUser -Name $KioskUserName -ErrorAction Stop
+    $IsAdministrator = Get-LocalGroupMember -Group $AdministratorsGroup -ErrorAction SilentlyContinue |
+        Where-Object { $_.SID -eq $KioskUserObject.SID }
+
+    if ($IsAdministrator) {
+        Remove-LocalGroupMember -Group $AdministratorsGroup -Member $KioskUserName -ErrorAction Stop
+        Write-Host "[OK] Usuario '$KioskUserName' eliminado del grupo de administradores." -ForegroundColor Green
+    } else {
+        Write-Host "[OK] Usuario '$KioskUserName' confirmado como usuario estándar." -ForegroundColor Green
+    }
+
     $SpecialAccountsPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList"
     if (!(Test-Path $SpecialAccountsPath)) {
         New-Item -Path $SpecialAccountsPath -Force | Out-Null
@@ -139,6 +159,108 @@ if ($OpenRGBExePath) {
     Write-Warning "No se encontró la instalación de OpenRGB. Se omitirá su lanzamiento."
 }
 
+# Buscar MSI Afterburner
+function Get-MSIAfterburnerPath {
+    $commonPaths = @(
+        "${env:ProgramFiles(x86)}\MSI Afterburner\MSIAfterburner.exe",
+        "$env:ProgramFiles\MSI Afterburner\MSIAfterburner.exe"
+    )
+
+    foreach ($path in $commonPaths) {
+        if ($path -and (Test-Path $path)) { return $path }
+    }
+
+    # Búsqueda alternativa en las claves de desinstalación
+    $uninstallRoots = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )
+
+    foreach ($root in $uninstallRoots) {
+        $entry = Get-ItemProperty -Path $root -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -like "MSI Afterburner*" } |
+            Select-Object -First 1
+
+        if ($entry -and $entry.InstallLocation) {
+            $exePath = Join-Path $entry.InstallLocation "MSIAfterburner.exe"
+            if (Test-Path $exePath) { return $exePath }
+        }
+    }
+
+    return $null
+}
+
+$MSIAfterburnerExePath = Get-MSIAfterburnerPath
+if ($MSIAfterburnerExePath) {
+    if ($MSIAfterburnerProfileNumber -notin 1..5) {
+        Write-Warning "El perfil de MSI Afterburner debe estar entre 1 y 5. Se usará Profile1."
+        $MSIAfterburnerProfileNumber = 1
+    }
+
+    Write-Host "[OK] Ruta de MSI Afterburner encontrada: $MSIAfterburnerExePath" -ForegroundColor Green
+
+    try {
+        # La tarea se ejecuta como SYSTEM y se activa al iniciar sesión el usuario kiosco.
+        # De este modo, la cuenta gamer permanece como usuario estándar y no aparece UAC.
+        $AfterburnerDirectory = Split-Path $MSIAfterburnerExePath -Parent
+
+        # Crear un script auxiliar para evitar problemas de comillas dentro de la tarea.
+        $AfterburnerHelperContent = @"
+`$existing = Get-Process -Name 'MSIAfterburner' -ErrorAction SilentlyContinue
+if (`$existing) {
+    `$existing | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+}
+
+Start-Process `
+    -FilePath '$($MSIAfterburnerExePath.Replace("'", "''"))' `
+    -ArgumentList '-Profile$MSIAfterburnerProfileNumber', '-Minimized' `
+    -WorkingDirectory '$($AfterburnerDirectory.Replace("'", "''"))'
+"@
+
+        [System.IO.File]::WriteAllText(
+            $MSIAfterburnerHelperPath,
+            $AfterburnerHelperContent,
+            [System.Text.UTF8Encoding]::new($true)
+        )
+
+        $AfterburnerAction = New-ScheduledTaskAction `
+            -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
+            -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$MSIAfterburnerHelperPath`""
+
+        $AfterburnerTrigger = New-ScheduledTaskTrigger `
+            -AtLogOn `
+            -User "$env:COMPUTERNAME\$KioskUserName"
+
+        $AfterburnerPrincipal = New-ScheduledTaskPrincipal `
+            -UserId "NT AUTHORITY\SYSTEM" `
+            -LogonType ServiceAccount `
+            -RunLevel Highest
+
+        $AfterburnerSettings = New-ScheduledTaskSettingsSet `
+            -AllowStartIfOnBatteries `
+            -DontStopIfGoingOnBatteries `
+            -StartWhenAvailable `
+            -MultipleInstances IgnoreNew
+
+        Register-ScheduledTask `
+            -TaskName $MSIAfterburnerTaskName `
+            -Action $AfterburnerAction `
+            -Trigger $AfterburnerTrigger `
+            -Principal $AfterburnerPrincipal `
+            -Settings $AfterburnerSettings `
+            -Description "Inicia MSI Afterburner como SYSTEM y aplica Profile$MSIAfterburnerProfileNumber al iniciar sesión '$KioskUserName'." `
+            -Force | Out-Null
+
+        Write-Host "[OK] Tarea '$MSIAfterburnerTaskName' creada como SYSTEM para aplicar Profile$MSIAfterburnerProfileNumber al iniciar sesión." -ForegroundColor Green
+    } catch {
+        Write-Warning "No se pudo crear la tarea de MSI Afterburner: $_"
+        $MSIAfterburnerExePath = $null
+    }
+} else {
+    Write-Warning "No se encontró MSI Afterburner. Se omitirá su lanzamiento."
+}
+
 # CORRECCIÓN PRINCIPAL: Crear VBS con sintaxis correcta y manejo robusto
 $VbsContent = @"
 On Error Resume Next
@@ -170,6 +292,16 @@ WScript.Sleep 2000
 "@
         Write-Host "OpenRGB se configurará para iniciar minimizado sin un perfil específico." -ForegroundColor Cyan
     }
+}
+
+if ($MSIAfterburnerExePath) {
+    $VbsContent += @"
+
+' MSI Afterburner se inicia automáticamente mediante una tarea como SYSTEM al iniciar sesión.
+' Dar unos segundos para que se aplique el perfil antes de lanzar Steam.
+WScript.Sleep 3000
+
+"@
 }
 
 $VbsContent += @"
